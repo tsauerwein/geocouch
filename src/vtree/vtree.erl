@@ -15,7 +15,7 @@
 -include("couch_db.hrl").
 
 -export([add_remove/5, area/1, calc_mbr/1, calc_nodes_mbr/1, count_lookup/3,
-    count_total/2, disjoint/2, foldl/4, insert/4, lookup/5, merge_mbr/2,
+    count_total/2, disjoint/2, foldl/4, insert/4, lookup/5, knn/6, merge_mbr/2,
     split_node/1, within/2]).
 
 % TODO vmx: Function parameters order is inconsitent between insert and delete.
@@ -28,7 +28,8 @@
 % Nodes maximum/minimum filling grade (TODO vmx: shouldn't be hard-coded)
 % The -define(MAX_FILLED, 4) is needed when running the (Erlang based) tests.
 -ifndef(makecheck).
--define(MAX_FILLED, 40).
+-define(MAX_FILLED, 4).
+%-define(MAX_FILLED, 40).
 %-define(MIN_FILLED, 20).
 -else.
 -define(MAX_FILLED, 4).
@@ -160,6 +161,8 @@ lookup(Fd, Pos, Bboxes, {FoldFun, InitAcc}) ->
         % all children are within the bbox we search with
         true ->
             foldl_stop(fun({Mbr, _Meta, {Id, {Geom, Value}}}, Acc) ->
+                ?LOG_DEBUG("FoldFun: ~p - ~p - ~p - ~p", 
+                    [Mbr, Id, Geom, Value]),
                 FoldFun({{Mbr, Id}, {Geom, Value}}, Acc)
             end, InitAcc, NodesPos);
         false ->
@@ -181,6 +184,125 @@ lookup(Fd, Pos, Bbox, FoldFunAndAcc, nil) ->
 lookup(Fd, Pos, Bbox, FoldFunAndAcc, Bounds) when not is_list(Bbox) ->
     Bboxes = split_bbox_if_flipped(Bbox, Bounds),
     lookup(Fd, Pos, Bboxes, FoldFunAndAcc).
+
+
+% k-nearest-neighbour search
+knn(_, nil, _, _, {_, InitAcc}, _) ->
+    % tree/file is empty
+    {ok, InitAcc};
+knn(Fd, Pos, K, QueryPoint, FoldFunAndAcc, Bounds) ->
+    {ok, Root} = couch_file:pread_term(Fd, Pos),
+    {_, Meta, _} = Root,
+    
+    % add the root node to an empty priority queue
+    Nodes = pq:add(0, {Meta#node.type, Root}, pq:empty()),
+    
+    {Result, _, _} = knn_(Nodes, Fd, K, QueryPoint, Bounds, FoldFunAndAcc, 0),
+    {ok, Result}.
+
+knn_(Nodes, Fd, K, QueryPoint, Bounds, {FoldFun, InitAcc}, Count) ->
+    case (Count >= K) or pq:isEmpty(Nodes) of
+    true ->
+        % we are done: either we have found K elements or we traversed the whole tree
+        {InitAcc, Count, Nodes};
+    false ->
+        {Node, RemainingNodes} = pq:takeMin(Nodes),
+        {NewAcc, NewCount, NewNodes} =
+            processNodeKnn(Node, Fd, QueryPoint, Bounds, RemainingNodes, {FoldFun, InitAcc}, Count),
+            
+        knn_(NewNodes, Fd, K, QueryPoint, Bounds, {FoldFun, NewAcc}, NewCount)
+    end.
+
+processNodeKnn({element, Element}, _, _, _, Nodes, {FoldFun, Acc}, Count) ->
+    % this is the current nearest neighbour, add it to the list
+    % (now we could also check the 'real' distance for geometry types other than points)
+    {Mbr, _, {Id, {Geom, Value}}} = Element,
+    {ok, NewAcc} = FoldFun({{Mbr, Id}, {Geom, Value}}, Acc),
+    
+    ?LOG_DEBUG("Adding Element: ~p - ~p", [Id, Geom]),
+    
+    {NewAcc, Count + 1, Nodes};
+    
+
+processNodeKnn({leaf, LeafNode}, _, QueryPoint, Bounds, Nodes, {_, Acc}, Count) ->
+    {_, _, Elements} = LeafNode,
+    
+    NewNodes = lists:foldl(
+        fun(Element, CurrentNodes) ->
+            {Mbr, _, _} = Element,
+            Distance = distance(QueryPoint, Mbr, Bounds),
+            pq:add(Distance, {element, Element}, CurrentNodes)
+        end,
+        Nodes,
+        Elements
+    ),
+    {Acc, Count, NewNodes};
+    
+processNodeKnn({inner, InnerNode}, Fd, QueryPoint, Bounds, Nodes, {_, Acc}, Count) ->
+    {_, _, ChildrenPos} = InnerNode,
+    
+    NewNodes = lists:foldl(
+        fun(ChildPos, CurrentNodes) ->
+            {ok, ChildNode} = couch_file:pread_term(Fd, ChildPos),
+            {Mbr, Meta, _} = ChildNode,
+            Distance = distance(QueryPoint, Mbr, Bounds),            
+            pq:add(Distance, {Meta#node.type, ChildNode}, CurrentNodes)
+        end,
+        Nodes,
+        ChildrenPos
+    ),
+    {Acc, Count, NewNodes}.
+
+distance(
+    Point = {X, Y}, 
+    Mbr = {XMin, YMin, XMax, YMax},
+    Bounds) ->
+        
+    case within(Point, Mbr) of
+        true -> 0;
+        false ->
+            DistX = math:pow(abs(X - getR(X, XMin, XMax)), 2),
+            DistY = math:pow(abs(Y - getR(Y, YMin, YMax)), 2),
+            
+            DistX + DistY
+    end.
+
+% see MINDIST definition
+getR(P, S, T) ->
+    if 
+        P < S -> S;
+        P > T -> T;
+        true -> P
+    end.
+
+%    {ok, Parent} = couch_file:pread_term(Fd, Pos),
+%    {ParentMbr, ParentMeta, ChildrenPosOrLeafs} = Parent,
+%    
+%        
+%    case ParentMeta#node.type of
+%    inner ->
+%        % in this case 'ChildrenPosOrLeafs' is a list of file positions
+%        ?LOG_DEBUG("Parent: ~p - ~p - ~p", 
+%            [ParentMbr, ParentMeta, ChildrenPosOrLeafs]),
+%        foldl_stop(
+%            fun(EntryPos, Acc) ->
+%                knn_(Fd, EntryPos, K, QueryPoint, Bounds, {FoldFun, Acc})
+%            end, 
+%            InitAcc, 
+%            ChildrenPosOrLeafs);
+%    leaf ->
+%        % 'ChildrenPosOrLeafs' contains the actual data, and not the positions
+%        foldl_stop(
+%            fun({Mbr, _Meta, {Id, {Geom, Value}}}, Acc) ->
+%                %?LOG_DEBUG("FoldFun: ~p - ~p - ~p - ~p", 
+%                %    [Mbr, Id, Geom, Value]),
+%                FoldFun({{Mbr, Id}, {Geom, Value}}, Acc)
+%            end, 
+%            InitAcc, 
+%            ChildrenPosOrLeafs)
+%    end.
+
+    
 
 % It's just like lists:foldl/3. The difference is that it can be stopped.
 % Therefore you always need to return a tuple with either "ok" or "stop"
@@ -252,11 +374,11 @@ bbox_is_flipped(_Bbox) ->
     not_flipped.
 
 % Tests if Inner is within Outer box
-within(Inner, Outer) ->
-    %io:format("(within) Inner, Outer: ~p, ~p~n", [Inner, Outer]),
-    {IW, IS, IE, IN} = Inner,
-    {OW, OS, OE, ON} = Outer,
-    (IW >= OW) and (IS >= OS) and (IE =< OE) and (IN =< ON).
+within({IW, IS, IE, IN}, {OW, OS, OE, ON}) ->
+    (IW >= OW) and (IS >= OS) and (IE =< OE) and (IN =< ON);
+% Tests if a point is within a box
+within({X, Y}, {OW, OS, OE, ON}) ->
+    (X >= OW) and (Y >= OS) and (X =< OE) and (Y =< ON).
 
 
 % Returns true if one Mbr intersects with another Mbr
