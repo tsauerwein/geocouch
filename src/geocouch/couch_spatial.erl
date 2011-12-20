@@ -16,6 +16,7 @@
 -export([start_link/0, init/1, handle_call/3, handle_cast/2, handle_info/2,
     terminate/2, code_change/3]).
 -export([fold/6]).
+-export([fold/7]).
 % For List functions
 -export([get_spatial_index/4]).
 % For compactor
@@ -236,6 +237,19 @@ fold(Group, Index, FoldFun, InitAcc, Bbox, Bounds) ->
     end,
     {_State, Acc} = vtree:lookup(
         Group#spatial_group.fd, Index#spatial.treepos, Bbox,
+        {WrapperFun, InitAcc}, Bounds),
+    {ok, Acc}.
+
+% todo: refactor
+fold(Group, Index, FoldFun, InitAcc, K, QueryPoint, Bounds) ->
+    WrapperFun = fun(Node, Acc) ->
+        Expanded = couch_view:expand_dups([Node], []),
+        lists:foldl(fun(E, {ok, Acc2}) ->
+            FoldFun(E, Acc2)
+        end, {ok, Acc}, Expanded)
+    end,
+    {_State, Acc} = vtree:knn(
+        Group#spatial_group.fd, Index#spatial.treepos, K, QueryPoint,
         {WrapperFun, InitAcc}, Bounds),
     {ok, Acc}.
 
