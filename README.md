@@ -106,6 +106,11 @@ It should return:
     {"id":"augsburg","bbox":[10.898333,48.371667,10.898333,48.371667],"geometry":{"type":"Point","coordinates":[10.898333,48.371667]},"value":["augsburg",[10.898333,48.371667]]}
     ]}
 
+Or trigger a k-nearest-neighbour-query to request the n nearest geometries 
+relative to a given query point:
+
+    curl -X GET 'http://localhost:5984/places/_design/main/_spatial/points?n=2&q=50,10'
+
 The Design Document Function
 ----------------------------
 
