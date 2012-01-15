@@ -70,13 +70,17 @@ couchTests.spatial = function(debug) {
     return docs;
   }
 
-  function extract_ids(str) {
+  function extract_ids(str, dontSortIds) {
     var json = JSON.parse(str);
     var res = [];
     for (var i in json.rows) {
       res.push(json.rows[i].id);
     }
-    return res.sort();
+    if (!dontSortIds) {
+      return res.sort();
+    } else {
+      return res;
+    }
   }
 
   // wait for a certain number of seconds
@@ -95,6 +99,11 @@ couchTests.spatial = function(debug) {
         return json.rows[i].geometry;
       }
     }
+  }
+
+  function getError(str) {
+    var json = JSON.parse(str);
+    return json.error;
   }
 
   var xhr;
@@ -194,6 +203,34 @@ couchTests.spatial = function(debug) {
                         "&count=true");
   TEquals('{"count":10}\n', xhr.responseText,
           "should return the count of all geometries");
+
+
+  // k-nearest-neighbour tests
+
+  xhr = CouchDB.request("GET", url_pre + "basicIndex?n=1000&q=0,0");
+  TEquals(['0','1','2','3','4','5','6','7','8','9', 'stale1', 'stale2'],
+          extract_ids(xhr.responseText),
+          "should return all geometries (knn)");
+
+  xhr = CouchDB.request("GET", url_pre + "basicIndex?n=3&q=-18.5,16.5");
+  TEquals(['1','0','2'],
+          extract_ids(xhr.responseText, true),
+          "return the points next to the 2nd sorted by distance");
+
+  xhr = CouchDB.request("GET", url_pre + "basicIndex?n=1&q=-18,17");
+  TEquals(['1'],
+          extract_ids(xhr.responseText),
+          "return the 2nd point");
+
+  xhr = CouchDB.request("GET", url_pre + "basicIndex?n=3");
+  TEquals('query_parse_error',
+          getError(xhr.responseText),
+          "error message is set (query point is missing)");
+
+  xhr = CouchDB.request("GET", url_pre + "basicIndex?q=1,2");
+  TEquals('query_parse_error',
+          getError(xhr.responseText),
+          "error message is set (n is missing)");
 
 
   // GeoJSON geometry tests

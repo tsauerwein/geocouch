@@ -234,15 +234,23 @@ parse_spatial_params(Req) ->
 
     #spatial_query_args{
         bbox = Bbox,
-        bounds = Bounds
+        bounds = Bounds,
+        n = N,
+        q = Q
     } = QueryArgs,
 
-    % todo: check if n and q are both set for knn-query
+    % check if n and q are both set for knn-query
+    case ((Q /= nil) xor (N /= nil)) of
+    true ->
+        throw({query_parse_error, <<"Invalid k-nearest-neighbour-query, "
+            "parameters `n` and `q` must both be set">>});
+    _ -> ok
+    end,
 
     case {Bbox, Bounds} of
     % Coordinates of the bounding box are flipped and no bounds for the
     % cartesian plane were set
-    {{W, S, E, N}, nil} when E < W; N < S ->
+    {{West, South, East, North}, nil} when East < West; North < South ->
         Msg = <<"Coordinates of the bounding box are flipped, but no bounds "
                 "for the cartesian plane were specified "
                 "(use the `plane_bounds` parameter)">>,
