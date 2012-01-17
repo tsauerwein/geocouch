@@ -197,7 +197,7 @@ knn(Fd, Pos, N, QueryGeom, FoldFunAndAcc, Bounds) ->
     {_, Meta, _} = Root,
 
     % add the root node to an empty priority queue
-    Nodes = pq:add(0, {Meta#node.type, Root}, pq:empty()),
+    Nodes = pqueue2:in({Meta#node.type, Root}, 0, pqueue2:new()),
 
     {Result, _, _} = knn2(Nodes, Fd, N, QueryGeom, Bounds, FoldFunAndAcc, 0),
     {ok, Result}.
@@ -205,12 +205,12 @@ knn(Fd, Pos, N, QueryGeom, FoldFunAndAcc, Bounds) ->
 knn2(Nodes, Fd, N, QueryGeom, Bounds, {FoldFun, InitAcc}, Count) ->
     % 'main loop': take the element/node with the currently 
     % smallest distance from the priority queue
-    case (Count >= N) or pq:isEmpty(Nodes) of
+    case (Count >= N) or pqueue2:is_empty(Nodes) of
     true ->
         % we are done: either we have found N elements or we traversed the whole tree
         {InitAcc, Count, Nodes};
     false ->
-        {Node, RemainingNodes} = pq:takeMin(Nodes),
+        {{value, Node}, RemainingNodes} = pqueue2:out(Nodes),
         {NewAcc, NewCount, NewNodes} =
             processNodeKnn(Node, Fd, QueryGeom, Bounds, RemainingNodes, {FoldFun, InitAcc}, Count),
 
@@ -234,7 +234,7 @@ processNodeKnn({leaf, LeafNode}, _, QueryGeom, Bounds, Nodes, {_, Acc}, Count) -
         fun(Element, CurrentNodes) ->
             {Mbr, _, _} = Element,
             Distance = distance(QueryGeom, Mbr, Bounds),
-            pq:add(Distance, {element, Element}, CurrentNodes)
+            pqueue2:in({element, Element}, Distance, CurrentNodes)
         end,
         Nodes,
         Elements
@@ -249,7 +249,7 @@ processNodeKnn({inner, InnerNode}, Fd, QueryGeom, Bounds, Nodes, {_, Acc}, Count
             {ok, ChildNode} = couch_file:pread_term(Fd, ChildPos),
             {Mbr, Meta, _} = ChildNode,
             Distance = distance(QueryGeom, Mbr, Bounds),
-            pq:add(Distance, {Meta#node.type, ChildNode}, CurrentNodes)
+            pqueue2:in({Meta#node.type, ChildNode}, Distance, CurrentNodes)
         end,
         Nodes,
         ChildrenPos

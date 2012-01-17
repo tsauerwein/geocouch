@@ -372,7 +372,7 @@ test_knn() ->
             "Get all nodes, sorted by distance desc."),
 
     {ok, Result3} = gc_test_util:knnIds(Fd, Pos6, 2, {2.5, 0}, nil),
-    etap:is(Result3, [Id1, Id2],
+    etap:is(Result3, [Id2, Id1],
             "Get 2 nodes with same distance"),
 
     Bounds = {0,0,10,10},
