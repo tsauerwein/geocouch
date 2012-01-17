@@ -185,6 +185,10 @@ lookup(Fd, Pos, Bbox, FoldFunAndAcc, Bounds) when not is_list(Bbox) ->
 
 
 % k-nearest-neighbour search
+% Implements the algorithm described in "Distance Browsing in Spatial Databases" by 
+% Hjaltason and Samet (http://www.cs.umd.edu/~hjs/pubs/incnear2.pdf) (figure 4, page 10).
+% Note that this implementation only uses the MBR of the geometries to calculate the
+% distance.
 knn(_, nil, _, _, {_, InitAcc}, _) ->
     % tree/file is empty
     {ok, InitAcc};
@@ -199,6 +203,8 @@ knn(Fd, Pos, N, QueryGeom, FoldFunAndAcc, Bounds) ->
     {ok, Result}.
 
 knn2(Nodes, Fd, N, QueryGeom, Bounds, {FoldFun, InitAcc}, Count) ->
+    % 'main loop': take the element/node with the currently 
+    % smallest distance from the priority queue
     case (Count >= N) or pq:isEmpty(Nodes) of
     true ->
         % we are done: either we have found N elements or we traversed the whole tree
@@ -221,10 +227,9 @@ processNodeKnn({element, Element}, _, _, _, Nodes, {FoldFun, Acc}, Count) ->
 
     {NewAcc, Count + 1, Nodes};
 
-
 processNodeKnn({leaf, LeafNode}, _, QueryGeom, Bounds, Nodes, {_, Acc}, Count) ->
     {_, _, Elements} = LeafNode,
-
+    % add all geometries inside the leaf node to the priority queue
     NewNodes = lists:foldl(
         fun(Element, CurrentNodes) ->
             {Mbr, _, _} = Element,
@@ -238,7 +243,7 @@ processNodeKnn({leaf, LeafNode}, _, QueryGeom, Bounds, Nodes, {_, Acc}, Count) -
 
 processNodeKnn({inner, InnerNode}, Fd, QueryGeom, Bounds, Nodes, {_, Acc}, Count) ->
     {_, _, ChildrenPos} = InnerNode,
-
+    % add all nodes inside the inner node to the priority queue
     NewNodes = lists:foldl(
         fun(ChildPos, CurrentNodes) ->
             {ok, ChildNode} = couch_file:pread_term(Fd, ChildPos),
@@ -251,27 +256,31 @@ processNodeKnn({inner, InnerNode}, Fd, QueryGeom, Bounds, Nodes, {_, Acc}, Count
     ),
     {Acc, Count, NewNodes}.
 
+% Calculates the minimum distance (called MINDIST) between a point and
+% a MBR, see "Nearest Neighbour Queries" by Roussopoulos et al.
+% (http://www.cs.ucr.edu/~tsotras/cs236/F11/roussopoulosNN95.pdf) (def. 3, pg. 3).
+% todo: use bounds
 distance(
     Point = {X, Y},
     Mbr = {XMin, YMin, XMax, YMax},
     Bounds) ->
 
     case within(Point, Mbr) of
-        true -> 0;
-        false ->
-            DistX = math:pow(abs(X - getR(X, XMin, XMax)), 2),
-            DistY = math:pow(abs(Y - getR(Y, YMin, YMax)), 2),
+    true -> 0;
+    false ->
+        DistX = math:pow(abs(X - getR(X, XMin, XMax)), 2),
+        DistY = math:pow(abs(Y - getR(Y, YMin, YMax)), 2),
 
-            DistX + DistY
+        DistX + DistY
     end.
 
-% see MINDIST definition
 getR(P, S, T) ->
     if
         P < S -> S;
         P > T -> T;
         true -> P
     end.
+
 
 % It's just like lists:foldl/3. The difference is that it can be stopped.
 % Therefore you always need to return a tuple with either "ok" or "stop"

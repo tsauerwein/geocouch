@@ -13,7 +13,7 @@
 -module(gc_test_util).
 
 -export([init_code_path/0, random_node/0, random_node/1, build_random_tree/2,
-    lookup/3]).
+    lookup/3, knn/5, knnIds/5]).
 
 -record(node, {
     % type = inner | leaf
@@ -94,3 +94,17 @@ lookup(Fd, Pos, Bbox) ->
          Acc2 = [{Bbox2, DocId, Geom, Value}|Acc],
          {ok, Acc2}
     end, []}, nil).
+
+
+knn(Fd, Pos, N, QueryGeom, Bounds) ->
+    vtree:knn(Fd, Pos, N, QueryGeom, {fun({{Bbox2, DocId}, {Geom, Value}}, Acc) ->
+         Acc2 = [{Bbox2, DocId, Geom, Value}|Acc],
+         {ok, Acc2}
+    end, []}, Bounds).
+
+
+knnIds(Fd, Pos, N, QueryGeom, Bounds) ->
+    vtree:knn(Fd, Pos, N, QueryGeom, {fun({{_, DocId}, {_, _}}, Acc) ->
+         Acc2 = [DocId|Acc],
+         {ok, Acc2}
+    end, []}, Bounds).
