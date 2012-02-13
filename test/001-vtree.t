@@ -18,7 +18,7 @@
 main(_) ->
     code:add_pathz(filename:dirname(escript:script_name())),
     gc_test_util:init_code_path(),
-    etap:plan(146),
+    etap:plan(151),
     case (catch test()) of
         ok ->
             etap:end_tests();
@@ -377,13 +377,12 @@ test_knn() ->
 
     Bounds = {0,0,10,10},
     {ok, Result4} = gc_test_util:knnIds(Fd, Pos6, 1, {0,1}, Bounds),
-    % supposed to fail: not implemented yet
     etap:is(Result4, [Id6],
             "Bounds are used for distance calculation"),
     ok.
 
 test_distance() ->
-    %etap:plan(5),
+    %etap:plan(10),
 
     etap:is(vtree:distance({5,5}, {0,0,10,10}, nil),
             0,
@@ -401,10 +400,20 @@ test_distance() ->
             vtree:distance({11,-1}, {12,-12,22,-2}, nil),
             "Point has the same distance to two Mbrs"),
 
-    % supposed to fail: not implemented yet
     etap:ok(vtree:distance({-170,75}, {160,70,170,80}, {-180,-90,180,90}) <
             vtree:distance({-170,75}, {160,70,170,80}, nil),
             "Bounds are used"),
+
+    etap:is(vtree:distance({1,3}, {5,2,6,4}, {0,0,6,4}) , 1,
+            "Bounds: x + width"),
+    etap:is(vtree:distance({5.5,1}, {5,3,6,4}, {0,0,6,4}) , 1,
+            "Bounds: y + height"),
+    etap:is(vtree:distance({1,0}, {5,3,6,4}, {0,0,6,4}) , 1,
+            "Bounds: x + width and y + height"),
+    etap:is(vtree:distance({5.5,3}, {5,0,6,1}, {0,0,6,4}) , 1,
+            "Bounds: y - height"),
+    etap:is(vtree:distance({0,3}, {5,0,6,1}, {0,0,6,4}) , 1,
+            "Bounds: x + width and y - height"),
     ok.
 
 

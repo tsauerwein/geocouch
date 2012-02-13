@@ -174,6 +174,16 @@ The bounding with the same numbers, but different order
     {"id":"namibia","bbox":[17.15,-22.566667,17.15,-22.566667],"geometry":{"type":"Point","coordinates":[17.15,-22.566667]},"value":["namibia",[17.15,-22.566667]]}
     ]}
 
+The `plane_bounds` parameter is also supported for k-nearest-neighbour-queries:
+
+    curl -X GET 'http://localhost:5984/places/_design/main/_spatial/points?n=3&q=175,-25&plane_bounds=-180,-90,180,90'
+
+    {"update_seq":6,"rows":[
+    {"id":"australia","bbox":[135,-25,135,-25],"geometry":{"type":"Point","coordinates":[135,-25]},"value":"australia"},
+    {"id":"oakland","bbox":[-122.270833,37.804444,-122.270833,37.804444],"geometry":{"type":"Point","coordinates":[-122.270833,37.804444]},"value":"oakland"},
+    {"id":"brasilia","bbox":[-52.95,-10.65,-52.95,-10.65],"geometry":{"type":"Point","coordinates":[-52.95,-10.65]},"value":"brasilia"}
+    ]}
+
 List function support
 ---------------------
 

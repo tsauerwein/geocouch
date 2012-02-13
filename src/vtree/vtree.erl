@@ -259,20 +259,39 @@ processNodeKnn({inner, InnerNode}, Fd, QueryGeom, Bounds, Nodes, {_, Acc}, Count
 % Calculates the minimum distance (called MINDIST) between a point and
 % a MBR, see "Nearest Neighbour Queries" by Roussopoulos et al.
 % (http://www.cs.ucr.edu/~tsotras/cs236/F11/roussopoulosNN95.pdf) (def. 3, pg. 3).
-% todo: use bounds
 distance(
     Point = {X, Y},
-    Mbr = {XMin, YMin, XMax, YMax},
+    Mbr,
     Bounds) ->
 
     case within(Point, Mbr) of
     true -> 0;
     false ->
-        DistX = math:pow(abs(X - getR(X, XMin, XMax)), 2),
-        DistY = math:pow(abs(Y - getR(Y, YMin, YMax)), 2),
+        case Bounds == nil of
+        true ->
+            distance2(Point, Mbr);
+        false ->
+            % if bounds are given, also calculate the distance for 8 additional
+            % points and return the minimum
+            {XMinB, YMinB, XMaxB, YMaxB} = Bounds,
+            Width = XMaxB - XMinB,
+            Height = YMaxB - YMinB,
 
-        DistX + DistY
+            lists:min(lists:map(
+                fun({DeltaX, DeltaY}) ->
+                    distance2({X + DeltaX, Y + DeltaY}, Mbr)
+                end,
+                [{0, 0}, {Width, 0}, {-Width, 0},
+                 {0, Height}, {Width, Height}, {-Width, Height},
+                 {0, -Height}, {Width, -Height}, {-Width, -Height}]))
+        end
     end.
+
+distance2({X, Y}, {XMin, YMin, XMax, YMax}) ->
+    DistX = math:pow(abs(X - getR(X, XMin, XMax)), 2),
+    DistY = math:pow(abs(Y - getR(Y, YMin, YMax)), 2),
+
+    DistX + DistY.
 
 getR(P, S, T) ->
     if

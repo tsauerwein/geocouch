@@ -232,6 +232,11 @@ couchTests.spatial = function(debug) {
           getError(xhr.responseText),
           "error message is set (n is missing)");
 
+  xhr = CouchDB.request("GET", url_pre + "basicIndex?n=2&q=-20.5,14.5&plane_bounds=-20.5,14.5,-1.5,33.5");
+  TEquals(['0','9'],
+          extract_ids(xhr.responseText),
+          "bounds are used (knn)");
+
 
   // GeoJSON geometry tests
   // NOTE vmx: (for all those tests) Should I test if the returned
