@@ -18,7 +18,7 @@
 main(_) ->
     code:add_pathz(filename:dirname(escript:script_name())),
     gc_test_util:init_code_path(),
-    etap:plan(151),
+    etap:plan(138),
     case (catch test()) of
         ok ->
             etap:end_tests();
@@ -29,13 +29,11 @@ main(_) ->
     ok.
 
 test() ->
-    test_within(),
     test_intersect(),
     test_disjoint(),
     test_lookup(),
     test_multilookup(),
     test_knn(),
-    test_distance(),
     test_split_bbox_if_flipped(),
     test_area(),
     test_merge_mbr(),
@@ -132,20 +130,6 @@ test_insert() ->
             "Insert a nodes into a full leaf node (root node)"),
     ok.
 
-
-test_within() ->
-    %etap:plan(4),
-    Bbox1 = {-20, -10, 30, 21},
-    Bbox2 = {-20, -10, 0, 0},
-    Mbr1_2 = {-18,-3,13,15},
-    Node1 = {{10,5,13,15}, <<"Node1">>},
-    {Node1Mbr, _} = Node1,
-    etap:is(vtree:within(Node1Mbr, Bbox1), true, "MBR is within the BBox"),
-    etap:is(vtree:within(Node1Mbr, Node1Mbr), true, "MBR is within itself"),
-    etap:is(vtree:within(Node1Mbr, Bbox2), false,
-            "MBR is not at all within BBox"),
-    etap:is(vtree:within(Mbr1_2, Bbox2), false, "MBR intersects BBox"),
-    ok.
 
 test_intersect() ->
     %etap:plan(17),
@@ -323,7 +307,7 @@ test_multilookup() ->
     ok.
 
 test_knn() ->
-    %etap:plan(4),
+    %etap:plan(5),
 
     {ok, Fd} = case couch_file:open(?FILENAME, [create, overwrite]) of
     {ok, Fd2} ->
@@ -363,57 +347,26 @@ test_knn() ->
     {ok, Mbr1_2_3_4_5, Pos5, 2} = vtree:insert(Fd, Pos4, Id5, Node5),
     {ok, Mbr1_2_3_4_5_6, Pos6, 2} = vtree:insert(Fd, Pos5, Id6, Node6),
 
-    {ok, Result1} = gc_test_util:knn(Fd, Pos2, 1, {0, 0}, nil),
+    {ok, Result1} = gc_test_util:knn(Fd, Pos2, 1, {-45, -45}, nil, nil),
     etap:is(Result1, [{Mbr1, Id1, Geom1, Id1}],
             "Get single node with Id, Mbr, Geom and Value"),
 
-    {ok, Result2} = gc_test_util:knnIds(Fd, Pos6, 1000, {0, 0}, nil),
+    {ok, Result2} = gc_test_util:knnIds(Fd, Pos6, 1000, {0, 0}, nil, nil),
     etap:is(Result2, [Id6, Id5, Id4, Id3, Id2, Id1],
             "Get all nodes, sorted by distance desc."),
 
-    {ok, Result3} = gc_test_util:knnIds(Fd, Pos6, 2, {2.5, 0}, nil),
+    {ok, Result3} = gc_test_util:knnIds(Fd, Pos6, 2, {2.5, 0}, nil, nil),
     etap:is(Result3, [Id2, Id1],
             "Get 2 nodes with same distance"),
 
     Bounds = {0,0,10,10},
-    {ok, Result4} = gc_test_util:knnIds(Fd, Pos6, 1, {0,1}, Bounds),
+    {ok, Result4} = gc_test_util:knnIds(Fd, Pos6, 1, {0,1}, Bounds, nil),
     etap:is(Result4, [Id6],
             "Bounds are used for distance calculation"),
-    ok.
 
-test_distance() ->
-    %etap:plan(10),
-
-    etap:is(vtree:distance({5,5}, {0,0,10,10}, nil),
-            0,
-            "Point is inside Mbr"),
-
-    etap:is(vtree:distance({0,5}, {0,0,10,10}, nil),
-            0,
-            "Point is on the border of the Mbr"),
-
-    etap:is(vtree:distance({5,11}, {0,0,10,10}, nil),
-            1,
-            "Point is over the Mbr"),
-
-    etap:is(vtree:distance({11,-1}, {0,0,10,10}, nil),
-            vtree:distance({11,-1}, {12,-12,22,-2}, nil),
-            "Point has the same distance to two Mbrs"),
-
-    etap:ok(vtree:distance({-170,75}, {160,70,170,80}, {-180,-90,180,90}) <
-            vtree:distance({-170,75}, {160,70,170,80}, nil),
-            "Bounds are used"),
-
-    etap:is(vtree:distance({1,3}, {5,2,6,4}, {0,0,6,4}) , 1,
-            "Bounds: x + width"),
-    etap:is(vtree:distance({5.5,1}, {5,3,6,4}, {0,0,6,4}) , 1,
-            "Bounds: y + height"),
-    etap:is(vtree:distance({1,0}, {5,3,6,4}, {0,0,6,4}) , 1,
-            "Bounds: x + width and y + height"),
-    etap:is(vtree:distance({5.5,3}, {5,0,6,1}, {0,0,6,4}) , 1,
-            "Bounds: y - height"),
-    etap:is(vtree:distance({0,3}, {5,0,6,1}, {0,0,6,4}) , 1,
-            "Bounds: x + width and y - height"),
+    {ok, Result5} = gc_test_util:knnIds(Fd, Pos6, 1000, {-45, -45}, nil, true),
+    etap:is(Result5, [Id4, Id5, Id6, Id3, Id2, Id1],
+            "Get all nodes, sorted by spherical distance desc."),
     ok.
 
 

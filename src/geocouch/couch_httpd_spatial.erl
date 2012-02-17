@@ -121,7 +121,8 @@ output_spatial_index(Req, Index, Group, Db, QueryArgs) when
     #spatial_query_args{
         n = N,
         q = QueryGeom,
-        bounds = Bounds
+        bounds = Bounds,
+        spherical = Spherical
     } = QueryArgs,
     CurrentEtag = spatial_etag(Db, Group, Index),
     HelperFuns = #spatial_fold_helper_funs{
@@ -137,7 +138,7 @@ output_spatial_index(Req, Index, Group, Db, QueryArgs) when
         % might be undefined) and the actual accumulator we only care
         % about in spatiallist functions)
         {ok, {Resp, _Acc}} = couch_spatial:fold(
-            Index, FoldFun, FoldAccInit, N, QueryGeom, Bounds),
+            Index, FoldFun, FoldAccInit, N, QueryGeom, Bounds, Spherical),
         finish_spatial_fold(Req, Resp)
     end);
 
@@ -278,6 +279,10 @@ parse_spatial_param("n", N) ->
     [{n, ?JSON_DECODE(N)}];
 parse_spatial_param("q", Q) ->
     [{q, list_to_tuple(?JSON_DECODE("[" ++ Q ++ "]"))}];
+parse_spatial_param("spherical", "true") ->
+    [{spherical, true}];
+parse_spatial_param("spherical", _Value) ->
+    throw({query_parse_error, <<"spherical only available as spherical=true">>});
 parse_spatial_param(Key, Value) ->
     [{extra, {Key, Value}}].
 
@@ -297,5 +302,7 @@ validate_spatial_query(n, Value, Args) ->
     Args#spatial_query_args{n=Value};
 validate_spatial_query(q, Value, Args) ->
     Args#spatial_query_args{q=Value};
+validate_spatial_query(spherical, true, Args) ->
+    Args#spatial_query_args{spherical=true};
 validate_spatial_query(extra, _Value, Args) ->
     Args.

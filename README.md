@@ -109,7 +109,11 @@ It should return:
 Or trigger a k-nearest-neighbour-query to request the n nearest geometries 
 relative to a given query point:
 
-    curl -X GET 'http://localhost:5984/places/_design/main/_spatial/points?n=2&q=50,10'
+    curl -X GET 'http://localhost:5984/places/_design/main/_spatial/points?n=2&q=50,10&spherical=true'
+
+If the parameter `spherical=true` is set, the [Haversine formula](http://en.wikipedia.org/wiki/Haversine_formula)
+is used to calculate spherical distances for nearest-neighbour-queries. In this case the geometries are
+expected to use the coordinate system [WGS 84](http://en.wikipedia.org/wiki/WGS_84).
 
 The Design Document Function
 ----------------------------
@@ -174,7 +178,8 @@ The bounding with the same numbers, but different order
     {"id":"namibia","bbox":[17.15,-22.566667,17.15,-22.566667],"geometry":{"type":"Point","coordinates":[17.15,-22.566667]},"value":["namibia",[17.15,-22.566667]]}
     ]}
 
-The `plane_bounds` parameter is also supported for k-nearest-neighbour-queries:
+The `plane_bounds` parameter is also supported for k-nearest-neighbour-queries. Note that you don't have
+to set the `plane_bounds` parameter when `spherical=true` is enabled.
 
     curl -X GET 'http://localhost:5984/places/_design/main/_spatial/points?n=3&q=175,-25&plane_bounds=-180,-90,180,90'
 

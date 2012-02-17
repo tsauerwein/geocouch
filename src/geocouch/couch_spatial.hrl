@@ -69,7 +69,9 @@
     % number of nearest neighbours
     n=nil,
     % search point for a nearest neighbour query
-    q=nil
+    q=nil,
+    % use spherical distances instead of cartesian
+    spherical=false
 }).
 
 % The counterpart to #spatial_fold_helper_funs in the view server is

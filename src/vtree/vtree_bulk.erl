@@ -26,6 +26,8 @@
 
 -export([log_n_ceil/2]).
 
+-import(geom, [within/2]).
+
 % XXX vmx: check if tree has correct meta information set for every node
 %    (type=inner/type=leaf)
 
@@ -335,7 +337,7 @@ seedtree_insert_children(#seedtree_leaf{new=Old}=Children, Node) when
 seedtree_insert_children([H|T], Node) ->
     {Mbr, Meta, Children} = H,
     {NodeMbr, _, _Data} = Node,
-    case vtree:within(NodeMbr, Mbr) of
+    case geom:within(NodeMbr, Mbr) of
     true ->
         {Status, Children2} = seedtree_insert_children(Children, Node),
         {Status, [{Mbr, Meta, Children2}|T]};

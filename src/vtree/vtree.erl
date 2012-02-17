@@ -15,8 +15,10 @@
 -include("couch_db.hrl").
 
 -export([add_remove/5, area/1, calc_mbr/1, calc_nodes_mbr/1, count_lookup/3,
-    count_total/2, disjoint/2, foldl/4, insert/4, lookup/5, knn/6, merge_mbr/2,
-    split_node/1, within/2]).
+    count_total/2, disjoint/2, foldl/4, insert/4, lookup/5, knn/7, merge_mbr/2,
+    split_node/1]).
+
+-import(geom, [within/2, distance/3, sphere_distance/2]).
 
 % TODO vmx: Function parameters order is inconsitent between insert and delete.
 
@@ -189,20 +191,21 @@ lookup(Fd, Pos, Bbox, FoldFunAndAcc, Bounds) when not is_list(Bbox) ->
 % Hjaltason and Samet (http://www.cs.umd.edu/~hjs/pubs/incnear2.pdf) (figure 4, page 10).
 % Note that this implementation only uses the MBR of the geometries to calculate the
 % distance.
-knn(_, nil, _, _, {_, InitAcc}, _) ->
+knn(_, nil, _, _, {_, InitAcc}, _, _) ->
     % tree/file is empty
     {ok, InitAcc};
-knn(Fd, Pos, N, QueryGeom, FoldFunAndAcc, Bounds) ->
+knn(Fd, Pos, N, QueryGeom, FoldFunAndAcc, Bounds, Spherical) ->
+    ?LOG_DEBUG("Spherical: ~p", [Spherical]),
     {ok, Root} = couch_file:pread_term(Fd, Pos),
     {_, Meta, _} = Root,
 
     % add the root node to an empty priority queue
     Nodes = pqueue2:in({Meta#node.type, Root}, 0, pqueue2:new()),
 
-    {Result, _, _} = knn2(Nodes, Fd, N, QueryGeom, Bounds, FoldFunAndAcc, 0),
+    {Result, _, _} = knn2(Nodes, Fd, N, QueryGeom, Bounds, Spherical, FoldFunAndAcc, 0),
     {ok, Result}.
 
-knn2(Nodes, Fd, N, QueryGeom, Bounds, {FoldFun, InitAcc}, Count) ->
+knn2(Nodes, Fd, N, QueryGeom, Bounds, Spherical, {FoldFun, InitAcc}, Count) ->
     % 'main loop': take the element/node with the currently 
     % smallest distance from the priority queue
     case (Count >= N) or pqueue2:is_empty(Nodes) of
@@ -212,12 +215,12 @@ knn2(Nodes, Fd, N, QueryGeom, Bounds, {FoldFun, InitAcc}, Count) ->
     false ->
         {{value, Node}, RemainingNodes} = pqueue2:out(Nodes),
         {NewAcc, NewCount, NewNodes} =
-            processNodeKnn(Node, Fd, QueryGeom, Bounds, RemainingNodes, {FoldFun, InitAcc}, Count),
+            processNodeKnn(Node, Fd, QueryGeom, Bounds, Spherical, RemainingNodes, {FoldFun, InitAcc}, Count),
 
-        knn2(NewNodes, Fd, N, QueryGeom, Bounds, {FoldFun, NewAcc}, NewCount)
+        knn2(NewNodes, Fd, N, QueryGeom, Bounds, Spherical, {FoldFun, NewAcc}, NewCount)
     end.
 
-processNodeKnn({element, Element}, _, _, _, Nodes, {FoldFun, Acc}, Count) ->
+processNodeKnn({element, Element}, _, _, _, _, Nodes, {FoldFun, Acc}, Count) ->
     % this is the current nearest neighbour, add it to the list
     % (now we could also check the 'real' distance for geometry types other than points)
     {Mbr, _, {Id, {Geom, Value}}} = Element,
@@ -227,13 +230,13 @@ processNodeKnn({element, Element}, _, _, _, Nodes, {FoldFun, Acc}, Count) ->
 
     {NewAcc, Count + 1, Nodes};
 
-processNodeKnn({leaf, LeafNode}, _, QueryGeom, Bounds, Nodes, {_, Acc}, Count) ->
+processNodeKnn({leaf, LeafNode}, _, QueryGeom, Bounds, Spherical, Nodes, {_, Acc}, Count) ->
     {_, _, Elements} = LeafNode,
     % add all geometries inside the leaf node to the priority queue
     NewNodes = lists:foldl(
         fun(Element, CurrentNodes) ->
             {Mbr, _, _} = Element,
-            Distance = distance(QueryGeom, Mbr, Bounds),
+            Distance = distance(QueryGeom, Mbr, Bounds, Spherical),
             pqueue2:in({element, Element}, Distance, CurrentNodes)
         end,
         Nodes,
@@ -241,14 +244,14 @@ processNodeKnn({leaf, LeafNode}, _, QueryGeom, Bounds, Nodes, {_, Acc}, Count) -
     ),
     {Acc, Count, NewNodes};
 
-processNodeKnn({inner, InnerNode}, Fd, QueryGeom, Bounds, Nodes, {_, Acc}, Count) ->
+processNodeKnn({inner, InnerNode}, Fd, QueryGeom, Bounds, Spherical, Nodes, {_, Acc}, Count) ->
     {_, _, ChildrenPos} = InnerNode,
     % add all nodes inside the inner node to the priority queue
     NewNodes = lists:foldl(
         fun(ChildPos, CurrentNodes) ->
             {ok, ChildNode} = couch_file:pread_term(Fd, ChildPos),
             {Mbr, Meta, _} = ChildNode,
-            Distance = distance(QueryGeom, Mbr, Bounds),
+            Distance = distance(QueryGeom, Mbr, Bounds, Spherical),
             pqueue2:in({Meta#node.type, ChildNode}, Distance, CurrentNodes)
         end,
         Nodes,
@@ -256,49 +259,11 @@ processNodeKnn({inner, InnerNode}, Fd, QueryGeom, Bounds, Nodes, {_, Acc}, Count
     ),
     {Acc, Count, NewNodes}.
 
-% Calculates the minimum distance (called MINDIST) between a point and
-% a MBR, see "Nearest Neighbour Queries" by Roussopoulos et al.
-% (http://www.cs.ucr.edu/~tsotras/cs236/F11/roussopoulosNN95.pdf) (def. 3, pg. 3).
-distance(
-    Point = {X, Y},
-    Mbr,
-    Bounds) ->
-
-    case within(Point, Mbr) of
-    true -> 0;
-    false ->
-        case Bounds == nil of
-        true ->
-            distance2(Point, Mbr);
-        false ->
-            % if bounds are given, also calculate the distance for 8 additional
-            % points and return the minimum
-            {XMinB, YMinB, XMaxB, YMaxB} = Bounds,
-            Width = XMaxB - XMinB,
-            Height = YMaxB - YMinB,
-
-            lists:min(lists:map(
-                fun({DeltaX, DeltaY}) ->
-                    distance2({X + DeltaX, Y + DeltaY}, Mbr)
-                end,
-                [{0, 0}, {Width, 0}, {-Width, 0},
-                 {0, Height}, {Width, Height}, {-Width, Height},
-                 {0, -Height}, {Width, -Height}, {-Width, -Height}]))
-        end
-    end.
-
-distance2({X, Y}, {XMin, YMin, XMax, YMax}) ->
-    DistX = math:pow(abs(X - getR(X, XMin, XMax)), 2),
-    DistY = math:pow(abs(Y - getR(Y, YMin, YMax)), 2),
-
-    DistX + DistY.
-
-getR(P, S, T) ->
-    if
-        P < S -> S;
-        P > T -> T;
-        true -> P
-    end.
+distance(Point, Mbr, _, Spherical) when (Spherical) ->
+    geom:sphere_distance(Point, Mbr);
+    
+distance(Point, Mbr, Bounds, _) ->
+    geom:distance(Point, Mbr, Bounds).
 
 
 % It's just like lists:foldl/3. The difference is that it can be stopped.
@@ -369,13 +334,6 @@ bbox_is_flipped({_W, S, _E, N}) when N < S ->
     {flipped, y};
 bbox_is_flipped(_Bbox) ->
     not_flipped.
-
-% Tests if Inner is within Outer box
-within({IW, IS, IE, IN}, {OW, OS, OE, ON}) ->
-    (IW >= OW) and (IS >= OS) and (IE =< OE) and (IN =< ON);
-% Tests if a point is within a box
-within({X, Y}, {OW, OS, OE, ON}) ->
-    (X >= OW) and (Y >= OS) and (X =< OE) and (Y =< ON).
 
 
 % Returns true if one Mbr intersects with another Mbr

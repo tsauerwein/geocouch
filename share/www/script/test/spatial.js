@@ -207,9 +207,9 @@ couchTests.spatial = function(debug) {
 
   // k-nearest-neighbour tests
 
-  xhr = CouchDB.request("GET", url_pre + "basicIndex?n=1000&q=0,0");
-  TEquals(['0','1','2','3','4','5','6','7','8','9', 'stale1', 'stale2'],
-          extract_ids(xhr.responseText),
+  xhr = CouchDB.request("GET", url_pre + "basicIndex?n=1000&q=-45,45");
+  TEquals(['1','2','0','3','4','5','6','7','8','9', 'stale1', 'stale2'],
+          extract_ids(xhr.responseText, true),
           "should return all geometries (knn)");
 
   xhr = CouchDB.request("GET", url_pre + "basicIndex?n=3&q=-18.5,16.5");
@@ -236,6 +236,11 @@ couchTests.spatial = function(debug) {
   TEquals(['0','9'],
           extract_ids(xhr.responseText),
           "bounds are used (knn)");
+
+  xhr = CouchDB.request("GET", url_pre + "basicIndex?n=1000&q=-45,45&spherical=true");
+  TEquals(['6','5','7','4','8','3','9','2','1','0', 'stale2', 'stale1'],
+          extract_ids(xhr.responseText, true),
+          "should return all geometries sorted by spherical distance (knn)");
 
 
   // GeoJSON geometry tests
