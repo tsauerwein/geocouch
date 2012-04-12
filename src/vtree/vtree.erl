@@ -30,8 +30,7 @@
 % Nodes maximum/minimum filling grade (TODO vmx: shouldn't be hard-coded)
 % The -define(MAX_FILLED, 4) is needed when running the (Erlang based) tests.
 -ifndef(makecheck).
--define(MAX_FILLED, 4).
-%-define(MAX_FILLED, 40).
+-define(MAX_FILLED, 40).
 %-define(MIN_FILLED, 20).
 -else.
 -define(MAX_FILLED, 4).
@@ -195,7 +194,6 @@ knn(_, nil, _, _, {_, InitAcc}, _, _) ->
     % tree/file is empty
     {ok, InitAcc};
 knn(Fd, Pos, N, QueryGeom, FoldFunAndAcc, Bounds, Spherical) ->
-    ?LOG_DEBUG("Spherical: ~p", [Spherical]),
     {ok, Root} = couch_file:pread_term(Fd, Pos),
     {_, Meta, _} = Root,
 
@@ -225,8 +223,6 @@ processNodeKnn({element, Element}, _, _, _, _, Nodes, {FoldFun, Acc}, Count) ->
     % (now we could also check the 'real' distance for geometry types other than points)
     {Mbr, _, {Id, {Geom, Value}}} = Element,
     {ok, NewAcc} = FoldFun({{Mbr, Id}, {Geom, Value}}, Acc),
-
-    ?LOG_DEBUG("Adding Element: ~p - ~p", [Id, Geom]),
 
     {NewAcc, Count + 1, Nodes};
 

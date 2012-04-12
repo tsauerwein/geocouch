@@ -139,7 +139,7 @@ sphere_distance(
         end
     end;
 
-% Calculates the distance in radians between two points using the Havesine formula.
+% Calculates the distance in radians between two points using the Haversine formula.
 % Multiply by 6370.986 (mean earth radius) to get the distance in kilometers.
 %
 % The coordinates are expected to be spherical coordinates (units of radians).

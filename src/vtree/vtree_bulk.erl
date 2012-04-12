@@ -15,8 +15,7 @@
 -include("couch_db.hrl").
 
 -ifndef(makecheck).
--define(MAX_FILLED, 4).
-%-define(MAX_FILLED, 40).
+-define(MAX_FILLED, 40).
 -else.
 -define(MAX_FILLED, 4).
 -compile(export_all).
